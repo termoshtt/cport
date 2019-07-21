@@ -1,0 +1,10 @@
+[package]
+name = "cmake-container-builder"
+version = "0.1.0"
+authors = ["Toshiki Teramura <toshiki.teramura@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+structopt = "*"
+shiplift  = "*"
+tokio = "*"
