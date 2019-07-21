@@ -1,5 +1,6 @@
 use shiplift::{ContainerListOptions, ContainerOptions, Docker};
-use std::path::PathBuf;
+use std::env;
+use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 use tokio::{prelude::Future, runtime::Runtime};
 
@@ -34,14 +35,19 @@ impl Builder {
     fn create_build_container(
         &mut self,
         image_name: &str,
+        src: &Path,
     ) -> Result<String, shiplift::errors::Error> {
-        let name = format!("cmake-container-build-{}", image_name);
-        let images = self.runtime.block_on(
-            self.docker
-                .containers()
-                .list(&ContainerListOptions::builder().all().build()),
-        )?;
-        let image: Vec<_> = images
+        let src = src.canonicalize().expect("Cannot canonicalize source path");
+        let name = format!("cmake-cb-{}{}", image_name, src.display()).replace("/", "_");
+
+        // XXX Is there no API to seek named container??
+        let image: Vec<_> = self
+            .runtime
+            .block_on(
+                self.docker
+                    .containers()
+                    .list(&ContainerListOptions::builder().all().build()),
+            )?
             .into_iter()
             .filter(|c| {
                 for n in &c.names {
@@ -56,6 +62,7 @@ impl Builder {
         if !image.is_empty() {
             return Ok(image[0].id.to_string());
         }
+
         eprintln!("No build container found. Create a new container...");
         self.runtime.block_on(
             self.docker
@@ -63,7 +70,8 @@ impl Builder {
                 .create(
                     &ContainerOptions::builder(image_name)
                         .name(&name)
-                        .auto_remove(true)
+                        .volumes(vec![&format!("{}:/src", src.display())])
+                        .auto_remove(false)
                         .build(),
                 )
                 .map(|status| {
@@ -84,7 +92,8 @@ fn main() {
 
     let mut builder = Builder::new();
 
-    let res = builder.create_build_container(&opt.image);
+    let cur_dir = env::current_dir().unwrap();
+    let res = builder.create_build_container(&opt.image, &cur_dir);
     match res {
         Ok(status) => {
             println!("Create succeeded. ID = {}", status);
