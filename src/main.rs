@@ -1,3 +1,4 @@
+use log::{error, info, warn};
 use shiplift::{ContainerListOptions, ContainerOptions, Docker};
 use std::env;
 use std::path::PathBuf;
@@ -22,6 +23,18 @@ struct Opt {
     /// Nickname of build container (for avoiding duplicate container name)
     #[structopt(short = "-x", long = "nickname")]
     nickname: Option<String>,
+
+    /// debug output (equal to RUST_LOG=debug)
+    #[structopt(long = "--debug")]
+    debug: bool,
+
+    /// verbose (equal to RUST_LOG=info)
+    #[structopt(short = "-v")]
+    verbose: bool,
+
+    /// less verbose (equal to RUST_LOG=error)
+    #[structopt(short = "-q")]
+    quiet: bool,
 }
 
 struct Builder {
@@ -41,15 +54,19 @@ impl Builder {
         let cur_dir = env::current_dir().expect("Cannot get current dir");
 
         let image = opt.image;
+        info!("Docker image = {}", image);
         let build_dir = opt.build_dir.unwrap_or("_cbuild".into());
+        info!("Build directory name = {}", build_dir);
         let source = opt.source.unwrap_or(cur_dir);
+        info!("Source directory = {}", source.display());
 
         let name = if let Some(nickname) = &opt.nickname {
-            format!("cmake-cb-{}{}-{}", image, source.display(), nickname)
+            format!("{}{}-{}", image, source.display(), nickname)
         } else {
-            format!("cmake-cb-{}{}", image, source.display(),)
+            format!("{}{}", image, source.display(),)
         }
         .replace("/", "_");
+        info!("Container name = {}", name);
 
         Builder {
             runtime,
@@ -82,8 +99,10 @@ impl Builder {
             })
             .collect();
         Ok(if !image.is_empty() {
+            info!("Container found");
             Some(image[0].id.to_string())
         } else {
+            info!("No coutainer found");
             None
         })
     }
@@ -92,7 +111,7 @@ impl Builder {
         if let Some(id) = self.seek_container()? {
             return Ok(id);
         }
-        eprintln!("No build container found. Create a new container...");
+        info!("Create new container: {}", self.name);
         self.runtime.block_on(
             self.docker
                 .containers()
@@ -100,8 +119,8 @@ impl Builder {
                     &ContainerOptions::builder(&self.image)
                         .name(&self.name)
                         .volumes(vec![&format!("{}:/src", self.source.display(),)])
+                        .tty(true)
                         .auto_remove(false)
-                        .entrypoint("cmake")
                         .build(),
                 )
                 .map(|status| {
@@ -118,10 +137,18 @@ impl Builder {
 
 fn main() {
     let opt = Opt::from_args();
-    println!("{:?}", opt);
+    if opt.debug {
+        env::set_var("RUST_LOG", "debug");
+    } else if opt.verbose {
+        env::set_var("RUST_LOG", "info");
+    } else if opt.quiet {
+        env::set_var("RUST_LOG", "error");
+    } else {
+        env::set_var("RUST_LOG", "warn");
+    }
+    env_logger::init();
 
     let mut builder = Builder::new(opt);
-
     let res = builder.create_container();
     match res {
         Ok(status) => {
@@ -130,11 +157,11 @@ fn main() {
         Err(e) => {
             match e {
                 shiplift::errors::Error::Fault { code, message } => {
-                    eprintln!("Failed to create a container: reason = {}", code);
-                    eprintln!("{}", message);
+                    warn!("Failed to create a container: reason = {}", code);
+                    warn!("{}", message);
                 }
                 _ => {
-                    eprintln!("{:?}", e);
+                    error!("{:?}", e);
                 }
             };
             std::process::exit(1)
