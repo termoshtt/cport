@@ -9,4 +9,4 @@ RUN apt-get update     \
     make               \
  && apt-get clean      \
  && rm -rf /var/lib/apt/lists/*
-
+WORKDIR /src
