@@ -1,5 +1,5 @@
 
-REGISTORY := registry.gitlab.com/termoshtt/cmake-container-builder
+REGISTORY := registry.gitlab.com/termoshtt/cmake-cb
 
 all: debian
 
