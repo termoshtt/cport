@@ -1,4 +1,4 @@
-use shiplift::{ContainerOptions, Docker};
+use shiplift::{ContainerListOptions, ContainerOptions, Docker};
 use std::path::PathBuf;
 use structopt::StructOpt;
 use tokio::{prelude::Future, runtime::Runtime};
@@ -35,12 +35,34 @@ impl Builder {
         &mut self,
         image_name: &str,
     ) -> Result<String, shiplift::errors::Error> {
+        let name = format!("cmake-container-build-{}", image_name);
+        let images = self.runtime.block_on(
+            self.docker
+                .containers()
+                .list(&ContainerListOptions::builder().all().build()),
+        )?;
+        let image: Vec<_> = images
+            .into_iter()
+            .filter(|c| {
+                for n in &c.names {
+                    // XXX ignore top '/'
+                    if &n[1..] == &name {
+                        return true;
+                    }
+                }
+                return false;
+            })
+            .collect();
+        if !image.is_empty() {
+            return Ok(image[0].id.to_string());
+        }
+        eprintln!("No build container found. Create a new container...");
         self.runtime.block_on(
             self.docker
                 .containers()
                 .create(
                     &ContainerOptions::builder(image_name)
-                        .name(&format!("cmake-container-builder-{}", image_name))
+                        .name(&name)
                         .auto_remove(true)
                         .build(),
                 )
@@ -61,6 +83,7 @@ fn main() {
     println!("{:?}", opt);
 
     let mut builder = Builder::new();
+
     let res = builder.create_build_container(&opt.image);
     match res {
         Ok(status) => {
