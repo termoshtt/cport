@@ -1,13 +1,17 @@
 use shiplift::{ContainerOptions, Docker};
 use std::path::PathBuf;
 use structopt::StructOpt;
-use tokio::runtime::Runtime;
+use tokio::{prelude::Future, runtime::Runtime};
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "cmake-container-build")]
 struct Opt {
     /// Build directory name
-    #[structopt(parse(from_os_str))]
+    #[structopt(help = "Image name")]
+    image: String,
+
+    /// Build directory name
+    #[structopt(parse(from_os_str), short = "-B")]
     build: Option<PathBuf>,
 
     /// Path of configure file
@@ -15,21 +19,64 @@ struct Opt {
     config: Option<PathBuf>,
 }
 
-fn container_option(image_name: &str) -> ContainerOptions {
-    ContainerOptions::builder(image_name)
-        .name(&format!("cmake-container-builder-{}", image_name))
-        .auto_remove(true)
-        .build()
+struct Builder {
+    runtime: Runtime,
+    docker: Docker,
+}
+
+impl Builder {
+    fn new() -> Self {
+        let runtime = Runtime::new().expect("Cannot init tokio runtime");
+        let docker = Docker::new();
+        Builder { runtime, docker }
+    }
+
+    fn create_build_container(
+        &mut self,
+        image_name: &str,
+    ) -> Result<String, shiplift::errors::Error> {
+        self.runtime.block_on(
+            self.docker
+                .containers()
+                .create(
+                    &ContainerOptions::builder(image_name)
+                        .name(&format!("cmake-container-builder-{}", image_name))
+                        .auto_remove(true)
+                        .build(),
+                )
+                .map(|status| {
+                    if let Some(warn) = status.warnings {
+                        for w in warn {
+                            eprintln!("{}", w);
+                        }
+                    }
+                    status.id
+                }),
+        )
+    }
 }
 
 fn main() {
     let opt = Opt::from_args();
     println!("{:?}", opt);
 
-    let mut rt = Runtime::new().expect("Cannot init tokio runtime");
-
-    let docker = Docker::new();
-
-    let res = rt.block_on(docker.containers().create(&container_option("debian")));
-    println!("{:?}", res);
+    let mut builder = Builder::new();
+    let res = builder.create_build_container(&opt.image);
+    match res {
+        Ok(status) => {
+            println!("Create succeeded. ID = {}", status);
+        }
+        Err(e) => {
+            match e {
+                shiplift::errors::Error::Fault { code, message } => {
+                    eprintln!("Failed to create a container: reason = {}", code);
+                    eprintln!("{}", message);
+                }
+                _ => {
+                    eprintln!("{:?}", e);
+                }
+            };
+            std::process::exit(1)
+        }
+    }
 }
