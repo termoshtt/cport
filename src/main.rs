@@ -1,6 +1,6 @@
 use shiplift::{ContainerListOptions, ContainerOptions, Docker};
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use structopt::StructOpt;
 use tokio::{prelude::Future, runtime::Runtime};
 
@@ -12,44 +12,56 @@ struct Opt {
     image: String,
 
     /// Build directory name
-    #[structopt(parse(from_os_str), short = "-B")]
-    build: Option<PathBuf>,
+    #[structopt(short = "-B")]
+    build_dir: Option<String>,
 
     /// Path of configure file
-    #[structopt(parse(from_os_str))]
-    config: Option<PathBuf>,
+    #[structopt(parse(from_os_str), short = "-H")]
+    source: Option<PathBuf>,
 
     /// Nickname of build container (for avoiding duplicate container name)
-    #[structopt(long = "nickname")]
+    #[structopt(short = "-x", long = "nickname")]
     nickname: Option<String>,
 }
 
 struct Builder {
     runtime: Runtime,
     docker: Docker,
+    image: String,
+    source: PathBuf,
+    build_dir: String,
+    name: String,
 }
 
 impl Builder {
-    fn new() -> Self {
+    fn new(opt: Opt) -> Self {
         let runtime = Runtime::new().expect("Cannot init tokio runtime");
         let docker = Docker::new();
-        Builder { runtime, docker }
-    }
 
-    fn create_build_container(
-        &mut self,
-        image_name: &str,
-        src: &Path,
-        nickname: Option<String>,
-    ) -> Result<String, shiplift::errors::Error> {
-        let src = src.canonicalize().expect("Cannot canonicalize source path");
-        let name = if let Some(nickname) = nickname {
-            format!("cmake-cb-{}{}-{}", image_name, src.display(), nickname)
+        let cur_dir = env::current_dir().expect("Cannot get current dir");
+
+        let image = opt.image;
+        let build_dir = opt.build_dir.unwrap_or("_cbuild".into());
+        let source = opt.source.unwrap_or(cur_dir);
+
+        let name = if let Some(nickname) = &opt.nickname {
+            format!("cmake-cb-{}{}-{}", image, source.display(), nickname)
         } else {
-            format!("cmake-cb-{}{}", image_name, src.display(),)
+            format!("cmake-cb-{}{}", image, source.display(),)
         }
         .replace("/", "_");
 
+        Builder {
+            runtime,
+            docker,
+            name,
+            build_dir,
+            image,
+            source,
+        }
+    }
+
+    fn seek_container(&mut self) -> Result<Option<String>, shiplift::errors::Error> {
         // XXX Is there no API to seek named container??
         let image: Vec<_> = self
             .runtime
@@ -62,26 +74,34 @@ impl Builder {
             .filter(|c| {
                 for n in &c.names {
                     // XXX ignore top '/'
-                    if &n[1..] == &name {
+                    if &n[1..] == &self.name {
                         return true;
                     }
                 }
                 return false;
             })
             .collect();
-        if !image.is_empty() {
-            return Ok(image[0].id.to_string());
-        }
+        Ok(if !image.is_empty() {
+            Some(image[0].id.to_string())
+        } else {
+            None
+        })
+    }
 
+    fn create_container(&mut self) -> Result<String, shiplift::errors::Error> {
+        if let Some(id) = self.seek_container()? {
+            return Ok(id);
+        }
         eprintln!("No build container found. Create a new container...");
         self.runtime.block_on(
             self.docker
                 .containers()
                 .create(
-                    &ContainerOptions::builder(image_name)
-                        .name(&name)
-                        .volumes(vec![&format!("{}:/src", src.display())])
+                    &ContainerOptions::builder(&self.image)
+                        .name(&self.name)
+                        .volumes(vec![&format!("{}:/src", self.source.display(),)])
                         .auto_remove(false)
+                        .entrypoint("cmake")
                         .build(),
                 )
                 .map(|status| {
@@ -100,10 +120,9 @@ fn main() {
     let opt = Opt::from_args();
     println!("{:?}", opt);
 
-    let mut builder = Builder::new();
+    let mut builder = Builder::new(opt);
 
-    let cur_dir = env::current_dir().unwrap();
-    let res = builder.create_build_container(&opt.image, &cur_dir, opt.nickname);
+    let res = builder.create_container();
     match res {
         Ok(status) => {
             println!("Create succeeded. ID = {}", status);
