@@ -18,6 +18,10 @@ struct Opt {
     /// Path of configure file
     #[structopt(parse(from_os_str))]
     config: Option<PathBuf>,
+
+    /// Nickname of build container (for avoiding duplicate container name)
+    #[structopt(long = "nickname")]
+    nickname: Option<String>,
 }
 
 struct Builder {
@@ -36,9 +40,15 @@ impl Builder {
         &mut self,
         image_name: &str,
         src: &Path,
+        nickname: Option<String>,
     ) -> Result<String, shiplift::errors::Error> {
         let src = src.canonicalize().expect("Cannot canonicalize source path");
-        let name = format!("cmake-cb-{}{}", image_name, src.display()).replace("/", "_");
+        let name = if let Some(nickname) = nickname {
+            format!("cmake-cb-{}{}-{}", image_name, src.display(), nickname)
+        } else {
+            format!("cmake-cb-{}{}", image_name, src.display(),)
+        }
+        .replace("/", "_");
 
         // XXX Is there no API to seek named container??
         let image: Vec<_> = self
@@ -93,7 +103,7 @@ fn main() {
     let mut builder = Builder::new();
 
     let cur_dir = env::current_dir().unwrap();
-    let res = builder.create_build_container(&opt.image, &cur_dir);
+    let res = builder.create_build_container(&opt.image, &cur_dir, opt.nickname);
     match res {
         Ok(status) => {
             println!("Create succeeded. ID = {}", status);
