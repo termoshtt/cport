@@ -46,6 +46,8 @@ struct Builder {
     build: String,
 }
 
+type Result<T> = ::std::result::Result<T, shiplift::errors::Error>;
+
 impl Builder {
     fn new(opt: Opt) -> Self {
         let runtime = Runtime::new().expect("Cannot init tokio runtime");
@@ -61,19 +63,22 @@ impl Builder {
         }
     }
 
-    fn seek_container(&mut self) -> Result<Option<String>, shiplift::errors::Error> {
-        let src = format!("{}", self.source.display());
-        let query = ContainerListOptions::builder()
-            .all()
-            .filter(vec![
-                ContainerFilter::Label("cport.image".into(), self.image.clone()),
-                ContainerFilter::Label("cport.source".into(), src),
-                ContainerFilter::Label("cport.build".into(), self.build.clone()),
-            ])
-            .build();
-        let image = self
-            .runtime
-            .block_on(self.docker.containers().list(&query))?;
+    fn seek(&mut self) -> Result<Option<String>> {
+        let image = self.runtime.block_on(
+            self.docker.containers().list(
+                &ContainerListOptions::builder()
+                    .all()
+                    .filter(vec![
+                        ContainerFilter::Label("cport.image".into(), self.image.clone()),
+                        ContainerFilter::Label(
+                            "cport.source".into(),
+                            format!("{}", self.source.display()),
+                        ),
+                        ContainerFilter::Label("cport.build".into(), self.build.clone()),
+                    ])
+                    .build(),
+            ),
+        )?;
         Ok(if !image.is_empty() {
             let id = &image[0].id;
             info!("Container found: {}", id);
@@ -84,8 +89,8 @@ impl Builder {
         })
     }
 
-    fn create_container(&mut self) -> Result<String, shiplift::errors::Error> {
-        if let Some(id) = self.seek_container()? {
+    fn create(&mut self) -> Result<String> {
+        if let Some(id) = self.seek()? {
             return Ok(id);
         }
         let src = format!("{}", self.source.display());
@@ -132,7 +137,7 @@ fn main() {
     env_logger::init();
 
     let mut builder = Builder::new(opt);
-    let res = builder.create_container();
+    let res = builder.create();
     match res {
         Ok(status) => {
             info!("ID = {}", status);
