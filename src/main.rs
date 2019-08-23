@@ -1,5 +1,6 @@
-use log::{error, info, warn};
-use shiplift::{ContainerListOptions, ContainerOptions, Docker};
+use log::*;
+use maplit::hashmap;
+use shiplift::{ContainerFilter, ContainerListOptions, ContainerOptions, Docker};
 use std::env;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -10,11 +11,11 @@ use tokio::{prelude::Future, runtime::Runtime};
 struct Opt {
     /// Build directory name
     #[structopt(help = "Image name")]
-    image: String,
+    image: Option<String>,
 
     /// Build directory name
     #[structopt(short = "-B")]
-    build_dir: Option<String>,
+    build: Option<String>,
 
     /// Path of configure file
     #[structopt(parse(from_os_str), short = "-H")]
@@ -42,8 +43,7 @@ struct Builder {
     docker: Docker,
     image: String,
     source: PathBuf,
-    build_dir: String,
-    name: String,
+    build: String,
 }
 
 impl Builder {
@@ -52,55 +52,32 @@ impl Builder {
         let docker = Docker::new();
 
         let cur_dir = env::current_dir().expect("Cannot get current dir");
-
-        let image = opt.image;
-        info!("Docker image = {}", image);
-        let build_dir = opt.build_dir.unwrap_or("_cbuild".into());
-        info!("Build directory name = {}", build_dir);
-        let source = opt.source.unwrap_or(cur_dir);
-        info!("Source directory = {}", source.display());
-
-        let name = if let Some(nickname) = &opt.nickname {
-            format!("{}{}-{}", image, source.display(), nickname)
-        } else {
-            format!("{}{}", image, source.display(),)
-        }
-        .replace("/", "_");
-        info!("Container name = {}", name);
-
         Builder {
             runtime,
             docker,
-            name,
-            build_dir,
-            image,
-            source,
+            build: opt.build.unwrap_or("_cpack".into()),
+            image: opt.image.unwrap_or("debian".into()),
+            source: opt.source.unwrap_or(cur_dir),
         }
     }
 
     fn seek_container(&mut self) -> Result<Option<String>, shiplift::errors::Error> {
-        // XXX Is there no API to seek named container??
-        let image: Vec<_> = self
+        let src = format!("{}", self.source.display());
+        let query = ContainerListOptions::builder()
+            .all()
+            .filter(vec![
+                ContainerFilter::Label("cport.image".into(), self.image.clone()),
+                ContainerFilter::Label("cport.source".into(), src),
+                ContainerFilter::Label("cport.build".into(), self.build.clone()),
+            ])
+            .build();
+        let image = self
             .runtime
-            .block_on(
-                self.docker
-                    .containers()
-                    .list(&ContainerListOptions::builder().all().build()),
-            )?
-            .into_iter()
-            .filter(|c| {
-                for n in &c.names {
-                    // XXX ignore top '/'
-                    if &n[1..] == &self.name {
-                        return true;
-                    }
-                }
-                return false;
-            })
-            .collect();
+            .block_on(self.docker.containers().list(&query))?;
         Ok(if !image.is_empty() {
-            info!("Container found");
-            Some(image[0].id.to_string())
+            let id = &image[0].id;
+            info!("Container found: {}", id);
+            Some(id.into())
         } else {
             info!("No coutainer found");
             None
@@ -111,15 +88,19 @@ impl Builder {
         if let Some(id) = self.seek_container()? {
             return Ok(id);
         }
-        info!("Create new container: {}", self.name);
-        self.runtime.block_on(
+        let src = format!("{}", self.source.display());
+        let id = self.runtime.block_on(
             self.docker
                 .containers()
                 .create(
                     &ContainerOptions::builder(&self.image)
-                        .name(&self.name)
-                        .volumes(vec![&format!("{}:/src", self.source.display(),)])
+                        .volumes(vec![&format!("{}:/src", src)])
                         .tty(true)
+                        .labels(&hashmap! {
+                            "cport.image" => self.image.as_str(),
+                            "cport.source" => src.as_str(),
+                            "cport.build" => &self.build,
+                        })
                         .auto_remove(false)
                         .build(),
                 )
@@ -131,7 +112,9 @@ impl Builder {
                     }
                     status.id
                 }),
-        )
+        )?;
+        info!("New container created: {}", id);
+        Ok(id)
     }
 }
 
@@ -152,7 +135,7 @@ fn main() {
     let res = builder.create_container();
     match res {
         Ok(status) => {
-            println!("Create succeeded. ID = {}", status);
+            info!("ID = {}", status);
         }
         Err(e) => {
             match e {
