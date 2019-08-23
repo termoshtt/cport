@@ -1,5 +1,5 @@
 [package]
-name = "cmake-cb"
+name = "cport"
 version = "0.1.0"
 authors = ["Toshiki Teramura <toshiki.teramura@gmail.com>"]
 edition = "2018"
@@ -10,3 +10,4 @@ shiplift  = "*"
 tokio = "*"
 log = "*"
 env_logger = "*"
+maplit = "*"

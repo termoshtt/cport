@@ -6,7 +6,7 @@ use structopt::StructOpt;
 use tokio::{prelude::Future, runtime::Runtime};
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "cmake-container-build")]
+#[structopt(name = "cport")]
 struct Opt {
     /// Build directory name
     #[structopt(help = "Image name")]

@@ -1,5 +1,5 @@
 
-REGISTORY := registry.gitlab.com/termoshtt/cmake-cb
+REGISTORY := registry.gitlab.com/termoshtt/cport
 
 all: debian
 
