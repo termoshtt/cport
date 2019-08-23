@@ -1,6 +1,10 @@
+use futures::stream::Stream;
 use log::*;
 use maplit::hashmap;
-use shiplift::{ContainerFilter, ContainerListOptions, ContainerOptions, Docker};
+use shiplift::{
+    Container, ContainerFilter, ContainerListOptions, ContainerOptions, Docker,
+    ExecContainerOptions,
+};
 use std::env;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -121,6 +125,28 @@ impl Builder {
         info!("New container created: {}", id);
         Ok(id)
     }
+
+    fn exec(&mut self) -> Result<()> {
+        let id = self.create()?;
+        let c = Container::new(&self.docker, id);
+        self.runtime.block_on(c.start())?;
+        self.runtime.block_on(
+            c.exec(
+                &ExecContainerOptions::builder()
+                    .cmd(vec!["ls", "/src"])
+                    .attach_stdout(true)
+                    .attach_stderr(true)
+                    .build(),
+            )
+            .for_each(|chunk| {
+                let out = String::from_utf8(chunk.data).unwrap();
+                println!("{}", out);
+                Ok(())
+            }),
+        )?;
+        self.runtime.block_on(c.stop(None))?;
+        Ok(())
+    }
 }
 
 fn main() {
@@ -137,10 +163,11 @@ fn main() {
     env_logger::init();
 
     let mut builder = Builder::new(opt);
-    let res = builder.create();
-    match res {
-        Ok(status) => {
-            info!("ID = {}", status);
+    match builder.create() {
+        Ok(id) => {
+            info!("Exec command on {}", id);
+            builder.exec().unwrap();
+            info!("Done.");
         }
         Err(e) => {
             match e {
