@@ -58,6 +58,7 @@ impl Builder {
         let docker = Docker::new();
 
         let cur_dir = env::current_dir().expect("Cannot get current dir");
+
         Builder {
             runtime,
             docker,
@@ -133,18 +134,40 @@ impl Builder {
         info!("Start container: {}", id);
         self.runtime.block_on(c.start())?;
 
+        let build_dir = self.source.join(&self.build);
         info!("Start build");
         self.runtime.block_on(
             c.exec(
                 &ExecContainerOptions::builder()
-                    .cmd(vec!["cmake", "--version"])
+                    .cmd(vec![
+                        "cmake",
+                        &format!("-H{}", self.source.display()),
+                        &format!("-B{}", build_dir.display()),
+                        // TODO cmake flags
+                    ])
                     .attach_stdout(true)
                     .attach_stderr(true)
                     .build(),
             )
             .for_each(|chunk| {
-                let out = String::from_utf8(chunk.data).unwrap();
-                println!("{}", out);
+                print!("{}", chunk.as_string_lossy());
+                Ok(())
+            }),
+        )?;
+        self.runtime.block_on(
+            c.exec(
+                &ExecContainerOptions::builder()
+                    .cmd(vec![
+                        "cmake",
+                        "--build",
+                        &format!("{}", build_dir.display()),
+                    ])
+                    .attach_stdout(true)
+                    .attach_stderr(true)
+                    .build(),
+            )
+            .for_each(|chunk| {
+                print!("{}", chunk.as_string_lossy());
                 Ok(())
             }),
         )?;
