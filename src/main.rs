@@ -14,7 +14,7 @@ use tokio::{prelude::Future, runtime::Runtime};
 #[structopt(name = "cport")]
 struct Opt {
     /// Build directory name
-    #[structopt(help = "Image name")]
+    #[structopt(long = "image", help = "Image name")]
     image: Option<String>,
 
     /// Build directory name
@@ -126,14 +126,16 @@ impl Builder {
         Ok(id)
     }
 
-    fn exec(&mut self) -> Result<()> {
-        let id = self.create()?;
+    fn exec(&mut self, id: &str) -> Result<()> {
         let c = Container::new(&self.docker, id);
+        info!("Start container: {}", id);
         self.runtime.block_on(c.start())?;
+
+        info!("Start build");
         self.runtime.block_on(
             c.exec(
                 &ExecContainerOptions::builder()
-                    .cmd(vec!["ls", "/src"])
+                    .cmd(vec!["apt", "--version"])
                     .attach_stdout(true)
                     .attach_stderr(true)
                     .build(),
@@ -144,6 +146,7 @@ impl Builder {
                 Ok(())
             }),
         )?;
+        info!("Stop container: {}", &id);
         self.runtime.block_on(c.stop(None))?;
         Ok(())
     }
@@ -165,9 +168,7 @@ fn main() {
     let mut builder = Builder::new(opt);
     match builder.create() {
         Ok(id) => {
-            info!("Exec command on {}", id);
-            builder.exec().unwrap();
-            info!("Done.");
+            builder.exec(&id).unwrap();
         }
         Err(e) => {
             match e {
