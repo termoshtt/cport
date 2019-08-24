@@ -62,7 +62,9 @@ impl Builder {
             runtime,
             docker,
             build: opt.build.unwrap_or("_cpack".into()),
-            image: opt.image.unwrap_or("debian".into()),
+            image: opt
+                .image
+                .unwrap_or("registry.gitlab.com/termoshtt/cport/debian".into()),
             source: opt.source.unwrap_or(cur_dir),
         }
     }
@@ -103,7 +105,7 @@ impl Builder {
                 .containers()
                 .create(
                     &ContainerOptions::builder(&self.image)
-                        .volumes(vec![&format!("{}:/src", src)])
+                        .volumes(vec![&format!("{}:{}", src, src)])
                         .tty(true)
                         .labels(&hashmap! {
                             "cport.image" => self.image.as_str(),
@@ -135,7 +137,7 @@ impl Builder {
         self.runtime.block_on(
             c.exec(
                 &ExecContainerOptions::builder()
-                    .cmd(vec!["apt", "--version"])
+                    .cmd(vec!["cmake", "--version"])
                     .attach_stdout(true)
                     .attach_stderr(true)
                     .build(),
