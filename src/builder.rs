@@ -156,6 +156,7 @@ impl CMakeArgBuilder {
     }
 
     fn get_args(&self) -> Vec<&str> {
+        info!("Generate command: {}", self.params.join(" "));
         self.params.iter().map(|s| s.as_str()).collect()
     }
 
