@@ -1,4 +1,4 @@
-use failure::Fallible;
+use failure::{format_err, Fallible};
 use log::*;
 use std::env;
 use std::path::PathBuf;
@@ -28,7 +28,17 @@ struct Opt {
     quiet: bool,
 }
 
-fn main() -> Fallible<()> {
+fn build(opt: Opt) -> Fallible<()> {
+    let toml = opt.config_toml.unwrap_or("cport.toml".into());
+    let cfg = cport::Configure::load(&toml)
+        .map_err(|_| format_err!("Cannot open TOML file: {}", toml.display()))?;
+    let mut builder = cport::Builder::new(cfg);
+    let id = builder.create()?;
+    builder.exec(&id)?;
+    Ok(())
+}
+
+fn main() {
     let opt = Opt::from_args();
     if opt.debug {
         env::set_var("RUST_LOG", "debug");
@@ -41,27 +51,19 @@ fn main() -> Fallible<()> {
     }
     env_logger::init();
 
-    let cfg = cport::Configure::load(opt.config_toml.unwrap_or("cport.toml".into()))?;
-    let mut builder = cport::Builder::new(cfg);
-    match builder.create() {
-        Ok(id) => {
-            builder.exec(&id).unwrap();
+    if let Err(e) = build(opt) {
+        if let Some(err) = e.downcast_ref() {
+            match err {
+                shiplift::errors::Error::Fault { code, message } => {
+                    warn!("Failed to create a container: reason = {}", code);
+                    warn!("{}", message);
+                }
+                _ => {
+                    error!("Unknown error around container manipulation");
+                }
+            };
         }
-        Err(e) => {
-            if let Ok(err) = e.downcast() {
-                match err {
-                    shiplift::errors::Error::Fault { code, message } => {
-                        warn!("Failed to create a container: reason = {}", code);
-                        warn!("{}", message);
-                    }
-                    _ => {
-                        error!("Unknown error around container manipulation");
-                        error!("{:?}", err);
-                    }
-                };
-            }
-            std::process::exit(1)
-        }
-    }
-    Ok(())
+        error!("{:?}", e);
+        std::process::exit(1)
+    };
 }
