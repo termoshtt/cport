@@ -1,0 +1,17 @@
+image: rust
+
+stages:
+  - test
+ 
+variables:
+  CARGO_HOME: $CI_PROJECT_DIR/.cargo
+
+cargo-test:
+  stage: test
+  script:
+    - cargo test
+  cache:
+    key: cargo
+    paths:
+      - target
+      - $CARGO_HOME
