@@ -21,8 +21,13 @@ pub struct CMake {
     pub option: Option<HashMap<String, String>>,
 }
 
+/// Root type for reading configure TOML
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 pub struct Configure {
+    /// Directory of root CMakeLists.txt exists
+    ///
+    /// - The directory where the TOML file exists if not specified
+    ///
     pub source: Option<PathBuf>,
     pub cport: CPort,
     pub cmake: CMake,
