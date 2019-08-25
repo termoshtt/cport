@@ -7,9 +7,9 @@ use structopt::StructOpt;
 #[derive(Debug, StructOpt)]
 #[structopt(name = "cport")]
 struct Opt {
-    /// Path of configure file
+    /// Path of configure TOML file
     #[structopt(parse(from_os_str))]
-    config: PathBuf,
+    config_toml: PathBuf,
 
     /// debug output (equal to RUST_LOG=debug)
     #[structopt(long = "--debug")]
@@ -37,9 +37,8 @@ fn main() -> Fallible<()> {
     }
     env_logger::init();
 
-    // load config
-    let config = cport::Configure::load(opt.config)?;
-    let mut builder = cport::Builder::new(config);
+    let cfg = cport::Configure::load(opt.config_toml)?;
+    let mut builder = cport::Builder::new(cfg);
     match builder.create() {
         Ok(id) => {
             builder.exec(&id).unwrap();
