@@ -16,7 +16,7 @@ pub struct CPort {
 /// Configure about cmake execution
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 pub struct CMake {
-    pub builder: Option<String>,
+    pub generator: Option<String>,
     pub build: Option<String>,
     pub option: Option<HashMap<String, String>>,
 }
@@ -59,7 +59,7 @@ mod tests {
         assert_eq!(cfg.cport.image, "debian");
         assert_eq!(cfg.cport.apt, Some(vec!["libboost-dev".to_string()]));
 
-        assert_eq!(cfg.cmake.builder, Some("Ninja".into()));
+        assert_eq!(cfg.cmake.generator, Some("Ninja".into()));
         assert_eq!(cfg.cmake.build, Some("_cport".into()));
         assert_eq!(
             cfg.cmake.option,

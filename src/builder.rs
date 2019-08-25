@@ -8,7 +8,10 @@ use shiplift::{
     Container, ContainerFilter, ContainerListOptions, ContainerOptions, Docker,
     ExecContainerOptions,
 };
-use std::path::PathBuf;
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 use tokio::{prelude::Future, runtime::Runtime};
 
 pub struct Builder {
@@ -17,6 +20,8 @@ pub struct Builder {
     image: String,
     source: PathBuf,
     build: String,
+    generator: String,
+    option: HashMap<String, String>,
 }
 
 impl Builder {
@@ -29,6 +34,8 @@ impl Builder {
             build: opt.cmake.build.unwrap_or("_cport".into()),
             image: opt.cport.image,
             source: opt.source.unwrap(),
+            generator: opt.cmake.generator.unwrap_or("Ninja".into()),
+            option: opt.cmake.option.unwrap_or(HashMap::new()),
         }
     }
 
@@ -101,12 +108,14 @@ impl Builder {
         self.runtime.block_on(
             c.exec(
                 &ExecContainerOptions::builder()
-                    .cmd(vec![
-                        "cmake",
-                        &format!("-H{}", self.source.display()),
-                        &format!("-B{}", build_dir.display()),
-                        // TODO cmake flags
-                    ])
+                    .cmd(
+                        CMakeArgBuilder::new()
+                            .build_dir(&build_dir)
+                            .source_dir(&self.source)
+                            .option(&self.option)
+                            .generator(&self.generator)
+                            .get_args(),
+                    )
                     .attach_stdout(true)
                     .attach_stderr(true)
                     .build(),
@@ -119,11 +128,7 @@ impl Builder {
         self.runtime.block_on(
             c.exec(
                 &ExecContainerOptions::builder()
-                    .cmd(vec![
-                        "cmake",
-                        "--build",
-                        &format!("{}", build_dir.display()),
-                    ])
+                    .cmd(CMakeArgBuilder::new().build_mode(&build_dir).get_args())
                     .attach_stdout(true)
                     .attach_stderr(true)
                     .build(),
@@ -136,5 +141,52 @@ impl Builder {
         info!("Stop container: {}", &id);
         self.runtime.block_on(c.stop(None))?;
         Ok(())
+    }
+}
+
+struct CMakeArgBuilder {
+    params: Vec<String>,
+}
+
+impl CMakeArgBuilder {
+    fn new() -> Self {
+        CMakeArgBuilder {
+            params: vec!["cmake".into()],
+        }
+    }
+
+    fn get_args(&self) -> Vec<&str> {
+        self.params.iter().map(|s| s.as_str()).collect()
+    }
+
+    fn build_dir<P: AsRef<Path>>(&mut self, dir: P) -> &mut Self {
+        let dir = dir.as_ref();
+        self.params.push(format!("-B{}", dir.display()));
+        self
+    }
+
+    fn source_dir<P: AsRef<Path>>(&mut self, dir: P) -> &mut Self {
+        let dir = dir.as_ref();
+        self.params.push(format!("-H{}", dir.display()));
+        self
+    }
+
+    fn generator(&mut self, gen: &str) -> &mut Self {
+        self.params.push(format!("-G{}", gen));
+        self
+    }
+
+    fn option(&mut self, opt: &HashMap<String, String>) -> &mut Self {
+        for (key, value) in opt {
+            self.params.push(format!("-D{}={}", key, value));
+        }
+        self
+    }
+
+    fn build_mode<P: AsRef<Path>>(&mut self, build_dir: P) -> &mut Self {
+        self.params.push("--build".into());
+        self.params
+            .push(format!("{}", build_dir.as_ref().display()));
+        self
     }
 }

@@ -3,8 +3,8 @@ image = "debian"
 apt   = ["libboost-dev"]
 
 [cmake]
-builder = "Ninja"
-build   = "_cport"
+generator = "Ninja"
+build     = "_cport"
 
 [cmake.option]
 CMAKE_EXPORT_COMPILE_COMMANDS = "ON"
