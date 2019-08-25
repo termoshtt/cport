@@ -1,5 +1,6 @@
 use crate::config::Configure;
 
+use failure::Fallible;
 use futures::stream::Stream;
 use log::*;
 use maplit::hashmap;
@@ -7,7 +8,6 @@ use shiplift::{
     Container, ContainerFilter, ContainerListOptions, ContainerOptions, Docker,
     ExecContainerOptions,
 };
-use std::env;
 use std::path::PathBuf;
 use tokio::{prelude::Future, runtime::Runtime};
 
@@ -19,27 +19,20 @@ pub struct Builder {
     build: String,
 }
 
-type Result<T> = ::std::result::Result<T, shiplift::errors::Error>;
-
 impl Builder {
     pub fn new(opt: Configure) -> Self {
         let runtime = Runtime::new().expect("Cannot init tokio runtime");
         let docker = Docker::new();
-
-        let cur_dir = env::current_dir().expect("Cannot get current dir");
-
         Builder {
             runtime,
             docker,
-            build: opt.build.unwrap_or("_cport".into()),
-            image: opt
-                .image
-                .unwrap_or("registry.gitlab.com/termoshtt/cport/debian".into()),
-            source: opt.source.unwrap_or(cur_dir),
+            build: opt.cmake.build.unwrap_or("_cport".into()),
+            image: opt.cport.image,
+            source: opt.source.unwrap(),
         }
     }
 
-    pub fn seek(&mut self) -> Result<Option<String>> {
+    pub fn seek(&mut self) -> Fallible<Option<String>> {
         let image = self.runtime.block_on(
             self.docker.containers().list(
                 &ContainerListOptions::builder()
@@ -65,7 +58,7 @@ impl Builder {
         })
     }
 
-    pub fn create(&mut self) -> Result<String> {
+    pub fn create(&mut self) -> Fallible<String> {
         if let Some(id) = self.seek()? {
             return Ok(id);
         }
@@ -98,7 +91,7 @@ impl Builder {
         Ok(id)
     }
 
-    pub fn exec(&mut self, id: &str) -> Result<()> {
+    pub fn exec(&mut self, id: &str) -> Fallible<()> {
         let c = Container::new(&self.docker, id);
         info!("Start container: {}", id);
         self.runtime.block_on(c.start())?;

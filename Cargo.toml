@@ -5,10 +5,13 @@ authors = ["Toshiki Teramura <toshiki.teramura@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-structopt = "*"
-shiplift  = "*"
-tokio = "*"
-log = "*"
-env_logger = "*"
-maplit = "*"
-futures = "*"
+structopt = "0.2.18"
+shiplift  = "0.5.0"
+tokio = "0.1.22"
+log = "0.4.8"
+env_logger = "0.6.2"
+maplit = "1.0.2"
+futures = "0.1.28"
+serde = { version = "1.0.99", features = ["derive"] }
+toml = "0.5.3"
+failure = "0.1.5"
