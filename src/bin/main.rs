@@ -5,11 +5,15 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "cport")]
+#[structopt(
+    name = "cport",
+    about = "cmake container builder",
+    raw(setting = "structopt::clap::AppSettings::ColoredHelp")
+)]
 struct Opt {
     /// Path of configure TOML file
-    #[structopt(parse(from_os_str))]
-    config_toml: PathBuf,
+    #[structopt(parse(from_os_str), short = "-f", long = "config-toml")]
+    config_toml: Option<PathBuf>,
 
     /// debug output (equal to RUST_LOG=debug)
     #[structopt(long = "--debug")]
@@ -37,7 +41,7 @@ fn main() -> Fallible<()> {
     }
     env_logger::init();
 
-    let cfg = cport::Configure::load(opt.config_toml)?;
+    let cfg = cport::Configure::load(opt.config_toml.unwrap_or("cport.toml".into()))?;
     let mut builder = cport::Builder::new(cfg);
     match builder.create() {
         Ok(id) => {
