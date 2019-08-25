@@ -34,6 +34,7 @@ fn build(opt: Opt) -> Fallible<()> {
     let mut builder = cport::Builder::new(cfg);
     let mut container = builder.get_container()?;
     container.start()?;
+    container.apt()?;
     container.configure()?;
     container.build()?;
     container.stop()?;

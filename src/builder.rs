@@ -106,6 +106,44 @@ impl<'a> ContainerRef<'a> {
         Ok(())
     }
 
+    pub fn apt(&mut self) -> Fallible<()> {
+        info!("apt install");
+        self.runtime.block_on(
+            self.container
+                .exec(
+                    &ExecContainerOptions::builder()
+                        .cmd(vec!["apt", "update"])
+                        .attach_stdout(true)
+                        .attach_stderr(true)
+                        .build(),
+                )
+                .for_each(|chunk| {
+                    print!("{}", chunk.as_string_lossy());
+                    Ok(())
+                }),
+        )?;
+        self.runtime.block_on(
+            self.container
+                .exec(
+                    &ExecContainerOptions::builder()
+                        .cmd(
+                            vec!["apt", "install", "-y"]
+                                .into_iter()
+                                .chain(self.cfg.apt.iter().map(|s| s.as_str()))
+                                .collect(),
+                        )
+                        .attach_stdout(true)
+                        .attach_stderr(true)
+                        .build(),
+                )
+                .for_each(|chunk| {
+                    print!("{}", chunk.as_string_lossy());
+                    Ok(())
+                }),
+        )?;
+        Ok(())
+    }
+
     pub fn configure(&mut self) -> Fallible<()> {
         info!("cmake configure step");
         let build_dir = self.cfg.source.join(&self.cfg.build);
