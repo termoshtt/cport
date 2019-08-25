@@ -8,138 +8,148 @@ use shiplift::{
     Container, ContainerFilter, ContainerListOptions, ContainerOptions, Docker,
     ExecContainerOptions,
 };
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, path::Path};
 use tokio::{prelude::Future, runtime::Runtime};
 
 pub struct Builder {
     runtime: Runtime,
     docker: Docker,
-    image: String,
-    source: PathBuf,
-    build: String,
-    generator: String,
-    option: HashMap<String, String>,
+    cfg: Configure,
 }
 
 impl Builder {
-    pub fn new(opt: Configure) -> Self {
+    pub fn new(cfg: Configure) -> Self {
         let runtime = Runtime::new().expect("Cannot init tokio runtime");
         let docker = Docker::new();
         Builder {
             runtime,
             docker,
-            build: opt.cmake.build.unwrap_or("_cport".into()),
-            image: opt.cport.image,
-            source: opt.source.unwrap(),
-            generator: opt.cmake.generator.unwrap_or("Ninja".into()),
-            option: opt.cmake.option.unwrap_or(HashMap::new()),
+            cfg,
         }
     }
 
-    pub fn seek(&mut self) -> Fallible<Option<String>> {
+    fn seek(&mut self) -> Fallible<Option<String>> {
         let image = self.runtime.block_on(
             self.docker.containers().list(
                 &ContainerListOptions::builder()
                     .all()
-                    .filter(vec![
-                        ContainerFilter::Label("cport.image".into(), self.image.clone()),
-                        ContainerFilter::Label(
-                            "cport.source".into(),
-                            format!("{}", self.source.display()),
-                        ),
-                        ContainerFilter::Label("cport.build".into(), self.build.clone()),
-                    ])
+                    .filter(vec![ContainerFilter::Label(
+                        "cport.source".into(),
+                        format!("{}", self.cfg.source.display()),
+                    )])
                     .build(),
             ),
         )?;
         Ok(if !image.is_empty() {
             let id = &image[0].id;
-            info!("Container found: {}", id);
             Some(id.into())
         } else {
-            info!("No coutainer found");
             None
         })
     }
 
-    pub fn create(&mut self) -> Fallible<String> {
-        if let Some(id) = self.seek()? {
-            return Ok(id);
-        }
-        let src = format!("{}", self.source.display());
-        let id = self.runtime.block_on(
-            self.docker
-                .containers()
-                .create(
-                    &ContainerOptions::builder(&self.image)
-                        .volumes(vec![&format!("{}:{}", src, src)])
-                        .tty(true)
-                        .labels(&hashmap! {
-                            "cport.image" => self.image.as_str(),
-                            "cport.source" => src.as_str(),
-                            "cport.build" => &self.build,
-                        })
-                        .auto_remove(false)
-                        .build(),
-                )
-                .map(|status| {
-                    if let Some(warn) = status.warnings {
-                        for w in warn {
-                            eprintln!("{}", w);
+    pub fn get_container(&mut self) -> Fallible<ContainerRef> {
+        let id = if let Some(id) = self.seek()? {
+            info!("Container found: {}", id);
+            id
+        } else {
+            let src = format!("{}", self.cfg.source.display());
+            let id = self.runtime.block_on(
+                self.docker
+                    .containers()
+                    .create(
+                        &ContainerOptions::builder(&self.cfg.image)
+                            .volumes(vec![&format!("{}:{}", src, src)])
+                            .tty(true)
+                            .labels(&hashmap! {
+                                "cport.source" => src.as_str(),
+                            })
+                            .auto_remove(false)
+                            .build(),
+                    )
+                    .map(|status| {
+                        if let Some(warn) = status.warnings {
+                            for w in warn {
+                                eprintln!("{}", w);
+                            }
                         }
-                    }
-                    status.id
-                }),
-        )?;
-        info!("New container created: {}", id);
-        Ok(id)
+                        status.id
+                    }),
+            )?;
+            info!("New container created: {}", id);
+            id
+        };
+        Ok(ContainerRef {
+            runtime: &mut self.runtime,
+            container: Container::new(&self.docker, id),
+            cfg: &self.cfg,
+        })
+    }
+}
+
+pub struct ContainerRef<'a> {
+    runtime: &'a mut Runtime,
+    container: Container<'a, 'static>,
+    cfg: &'a Configure,
+}
+
+impl<'a> ContainerRef<'a> {
+    pub fn start(&mut self) -> Fallible<()> {
+        info!("Start container");
+        self.runtime.block_on(self.container.start())?;
+        Ok(())
     }
 
-    pub fn exec(&mut self, id: &str) -> Fallible<()> {
-        let c = Container::new(&self.docker, id);
-        info!("Start container: {}", id);
-        self.runtime.block_on(c.start())?;
+    pub fn stop(&mut self) -> Fallible<()> {
+        info!("Stop container");
+        self.runtime.block_on(self.container.stop(None))?;
+        Ok(())
+    }
 
-        let build_dir = self.source.join(&self.build);
-        info!("Start build");
+    pub fn configure(&mut self) -> Fallible<()> {
+        info!("cmake configure step");
+        let build_dir = self.cfg.source.join(&self.cfg.build);
         self.runtime.block_on(
-            c.exec(
-                &ExecContainerOptions::builder()
-                    .cmd(
-                        CMakeArgBuilder::new()
-                            .build_dir(&build_dir)
-                            .source_dir(&self.source)
-                            .option(&self.option)
-                            .generator(&self.generator)
-                            .get_args(),
-                    )
-                    .attach_stdout(true)
-                    .attach_stderr(true)
-                    .build(),
-            )
-            .for_each(|chunk| {
-                print!("{}", chunk.as_string_lossy());
-                Ok(())
-            }),
+            self.container
+                .exec(
+                    &ExecContainerOptions::builder()
+                        .cmd(
+                            CMakeArgBuilder::new()
+                                .build_dir(&build_dir)
+                                .source_dir(&self.cfg.source)
+                                .option(&self.cfg.option)
+                                .generator(&self.cfg.generator)
+                                .get_args(),
+                        )
+                        .attach_stdout(true)
+                        .attach_stderr(true)
+                        .build(),
+                )
+                .for_each(|chunk| {
+                    print!("{}", chunk.as_string_lossy());
+                    Ok(())
+                }),
         )?;
+        Ok(())
+    }
+
+    pub fn build(&mut self) -> Fallible<()> {
+        info!("cmake build step");
+        let build_dir = self.cfg.source.join(&self.cfg.build);
         self.runtime.block_on(
-            c.exec(
-                &ExecContainerOptions::builder()
-                    .cmd(CMakeArgBuilder::new().build_mode(&build_dir).get_args())
-                    .attach_stdout(true)
-                    .attach_stderr(true)
-                    .build(),
-            )
-            .for_each(|chunk| {
-                print!("{}", chunk.as_string_lossy());
-                Ok(())
-            }),
+            self.container
+                .exec(
+                    &ExecContainerOptions::builder()
+                        .cmd(CMakeArgBuilder::new().build_mode(&build_dir).get_args())
+                        .attach_stdout(true)
+                        .attach_stderr(true)
+                        .build(),
+                )
+                .for_each(|chunk| {
+                    print!("{}", chunk.as_string_lossy());
+                    Ok(())
+                }),
         )?;
-        info!("Stop container: {}", &id);
-        self.runtime.block_on(c.stop(None))?;
         Ok(())
     }
 }

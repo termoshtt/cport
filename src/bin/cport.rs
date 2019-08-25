@@ -1,4 +1,4 @@
-use failure::{format_err, Fallible};
+use failure::Fallible;
 use log::*;
 use std::env;
 use std::path::PathBuf;
@@ -30,11 +30,13 @@ struct Opt {
 
 fn build(opt: Opt) -> Fallible<()> {
     let toml = opt.config_toml.unwrap_or("cport.toml".into());
-    let cfg = cport::Configure::load(&toml)
-        .map_err(|_| format_err!("Cannot open TOML file: {}", toml.display()))?;
+    let cfg = cport::read_toml(&toml)?;
     let mut builder = cport::Builder::new(cfg);
-    let id = builder.create()?;
-    builder.exec(&id)?;
+    let mut container = builder.get_container()?;
+    container.start()?;
+    container.configure()?;
+    container.build()?;
+    container.stop()?;
     Ok(())
 }
 
