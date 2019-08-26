@@ -1,14 +1,12 @@
 use failure::Fallible;
-use log::*;
-use std::env;
-use std::path::PathBuf;
-use structopt::StructOpt;
+use std::{env, path::PathBuf};
+use structopt::{clap::AppSettings::ColoredHelp, StructOpt};
 
 #[derive(Debug, StructOpt)]
 #[structopt(
     name = "cport",
     about = "cmake container builder",
-    raw(setting = "structopt::clap::AppSettings::ColoredHelp")
+    raw(setting = "ColoredHelp")
 )]
 struct Opt {
     /// Path of configure TOML file
@@ -26,22 +24,23 @@ struct Opt {
     /// less verbose (equal to RUST_LOG=error)
     #[structopt(short = "-q")]
     quiet: bool,
+
+    #[structopt(subcommand)]
+    command: Command,
 }
 
-fn build(opt: Opt) -> Fallible<()> {
-    let toml = opt.config_toml.unwrap_or("cport.toml".into());
-    let cfg = cport::read_toml(&toml)?;
-    let mut builder = cport::Builder::new(cfg);
-    let mut container = builder.get_container()?;
-    container.start()?;
-    container.apt()?;
-    container.configure()?;
-    container.build()?;
-    container.stop()?;
-    Ok(())
+#[derive(Debug, StructOpt)]
+enum Command {
+    /// Configure and build
+    #[structopt(name = "build", raw(setting = "ColoredHelp"))]
+    Build {},
+
+    /// Install apt/yum packages
+    #[structopt(name = "install", raw(setting = "ColoredHelp"))]
+    Install {},
 }
 
-fn main() {
+fn main() -> Fallible<()> {
     let opt = Opt::from_args();
     if opt.debug {
         env::set_var("RUST_LOG", "debug");
@@ -54,19 +53,23 @@ fn main() {
     }
     env_logger::init();
 
-    if let Err(e) = build(opt) {
-        if let Some(err) = e.downcast_ref() {
-            match err {
-                shiplift::errors::Error::Fault { code, message } => {
-                    warn!("Failed to create a container: reason = {}", code);
-                    warn!("{}", message);
-                }
-                _ => {
-                    error!("Unknown error around container manipulation");
-                }
-            };
+    let toml = opt.config_toml.unwrap_or("cport.toml".into());
+    let cfg = cport::read_toml(&toml)?;
+    let mut builder = cport::Builder::new(cfg);
+    let mut container = builder.get_container()?;
+
+    match opt.command {
+        Command::Build {} => {
+            container.start()?;
+            container.configure()?;
+            container.build()?;
+            container.stop()?;
         }
-        error!("{:?}", e);
-        std::process::exit(1)
-    };
+        Command::Install {} => {
+            container.start()?;
+            container.apt()?;
+            container.stop()?;
+        }
+    }
+    Ok(())
 }
