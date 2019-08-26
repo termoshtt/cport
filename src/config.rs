@@ -77,6 +77,7 @@ impl ParsedConfigure {
     }
 }
 
+/// Read and normalize configure TOML
 pub fn read_toml<P: AsRef<Path>>(filename: P) -> Fallible<Configure> {
     let filename = filename.as_ref();
     let cfg = ParsedConfigure::load(&filename)

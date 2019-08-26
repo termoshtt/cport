@@ -11,6 +11,10 @@ use shiplift::{
 use std::{collections::HashMap, path::Path};
 use tokio::{prelude::Future, runtime::Runtime};
 
+/// Container builder corresponding to the setting in TOML
+///
+/// - The container created by `cport` has a label `cport.source`,
+///   whose value is the abstract path of the TOML file.
 pub struct Builder {
     runtime: Runtime,
     docker: Docker,
