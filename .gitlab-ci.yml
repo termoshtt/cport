@@ -2,16 +2,39 @@ image: rust
 
 stages:
   - test
- 
-variables:
-  CARGO_HOME: $CI_PROJECT_DIR/.cargo
+  - deploy
 
-cargo-test:
-  stage: test
-  script:
-    - cargo test
+.cargo-cache:
+  variables:
+    CARGO_HOME: $CI_PROJECT_DIR/.cargo
   cache:
     key: cargo
     paths:
       - target
       - $CARGO_HOME
+
+cargo-test:
+  extends: .cargo-cache
+  stage: test
+  script:
+    - cargo test
+
+cargo-doc:
+  extends: .cargo-cache
+  stage: test
+  script:
+    - cargo doc --no-deps
+  artifacts:
+    paths:
+      - target/doc
+
+pages:
+  stage: deploy
+  dependencies:
+    - cargo-doc
+  script:
+    - mkdir -p public
+    - mv target/doc public
+  artifacts:
+    paths:
+      - public
