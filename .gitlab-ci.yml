@@ -23,7 +23,6 @@ pages:
   stage: deploy
   script:
     - cargo doc --no-deps
-    - mkdir -p public
     - mv target/doc public
   artifacts:
     paths:
