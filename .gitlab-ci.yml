@@ -19,22 +19,16 @@ cargo-test:
   script:
     - cargo test
 
-cargo-doc:
-  extends: .cargo-cache
-  stage: test
-  script:
-    - cargo doc --no-deps
-  artifacts:
-    paths:
-      - target/doc
-
 pages:
   stage: deploy
   dependencies:
     - cargo-doc
   script:
+    - cargo doc --no-deps
     - mkdir -p public
     - mv target/doc public
   artifacts:
     paths:
       - public
+  only:
+    - master
