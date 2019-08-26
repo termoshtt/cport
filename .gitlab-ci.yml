@@ -21,8 +21,6 @@ cargo-test:
 
 pages:
   stage: deploy
-  dependencies:
-    - cargo-doc
   script:
     - cargo doc --no-deps
     - mkdir -p public
