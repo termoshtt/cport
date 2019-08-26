@@ -21,6 +21,7 @@ cargo-test:
 
 pages:
   stage: deploy
+  extends: .cargo-cache
   script:
     - cargo doc --no-deps
     - mv target/doc public
