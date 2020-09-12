@@ -17,14 +17,11 @@ You should have received a copy of the GNU Affero General Public License
 along with cport.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/*!
-This is a document for the maintanance of cport.
-*/
+/// `docker ps` command
+pub struct ListCommand {}
 
-mod builder;
-mod config;
-mod docker;
+/// `docker run` command
+pub struct RunCommand {}
 
-pub use builder::*;
-pub use config::*;
-pub use docker::*;
+/// `docker exec` command
+pub struct ExecCommand {}
