@@ -36,7 +36,7 @@ cport build
 License
 --------
 
-Copyright 2019-2020 Toshiki Teramura
+Copyright 2019-2020 Toshiki Teramura <toshiki.teramura@gmail.com>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as published by
