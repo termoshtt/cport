@@ -17,11 +17,81 @@ You should have received a copy of the GNU Affero General Public License
 along with cport.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/// `docker ps` command
-pub struct ListCommand {}
+use serde::Deserialize;
+use std::{io::BufRead, process::Command};
 
-/// `docker run` command
-pub struct RunCommand {}
+/// Raw entry of `docker ps --format {{json .}}`
+#[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
+struct RawPsEntry {
+    Command: String,
+    Mounts: String,
+    Names: String,
+    ID: String,
+    Image: String,
+    Labels: String,
+}
 
-/// `docker exec` command
-pub struct ExecCommand {}
+#[derive(Debug, Clone)]
+pub struct PsEntry {
+    command: Vec<String>,
+    mounts: Vec<String>,
+    name: String,
+    id: String,
+    image: String,
+    labels: Vec<String>,
+}
+
+impl PsEntry {
+    fn from_raw(raw: RawPsEntry) -> Self {
+        fn trim_split(input: &str, sep: &str) -> Vec<String> {
+            input
+                .trim_matches('"')
+                .trim()
+                .split(sep)
+                .flat_map(|x| {
+                    if x.is_empty() {
+                        None
+                    } else {
+                        Some(x.to_string())
+                    }
+                })
+                .collect()
+        }
+        PsEntry {
+            name: raw.Names,
+            id: raw.ID,
+            image: raw.Image,
+            mounts: trim_split(&raw.Mounts, ","),
+            labels: trim_split(&raw.Labels, ","),
+            command: trim_split(&raw.Command, " "),
+        }
+    }
+}
+
+pub fn ps() -> Vec<PsEntry> {
+    let output = Command::new("docker")
+        .arg("ps")
+        .arg("--no-trunc")
+        .args(&["--format", r#"{{json .}}"#])
+        .output()
+        .unwrap();
+    let output = std::io::BufReader::new(output.stdout.as_slice());
+    output
+        .lines()
+        .map(|line| {
+            let line = line.unwrap();
+            let raw = serde_json::from_str(&line).unwrap();
+            PsEntry::from_raw(raw)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn ps() {
+        let container_list = super::ps();
+        dbg!(container_list);
+    }
+}
